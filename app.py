@@ -1,8 +1,6 @@
 import streamlit as st
-from dotenv import load_dotenv
-from utils import get_document_text, get_chunked_text, get_faiss_index, search_faiss_index
-import cohere
-import os
+# Remove: from dotenv import load_dotenv
+# Remove: import os
 import time
 from datetime import datetime
 import streamlit.components.v1 as components
@@ -25,7 +23,8 @@ def get_cohere_response(question, context, cohere_api_key):
 
 
 def main():
-    load_dotenv()
+    # Use Streamlit secrets.toml for API keys
+    # In .streamlit/secrets.toml, add: COHERE_API_KEY = "your-cohere-api-key-here"
     st.set_page_config(page_title='PDF & DOCX ChatBot', page_icon=':sparkles:', layout='wide', initial_sidebar_state='auto')
     st.markdown('''
         <style>
@@ -137,7 +136,8 @@ def main():
         ''', unsafe_allow_html=True)
         st.subheader("Upload & Process Document")
         docs = st.file_uploader("Upload PDF or DOCX file(s)", accept_multiple_files=True, type=["pdf", "docx"])
-        cohere_api_key = os.getenv("COHERE_API_KEY")
+        # Use st.secrets for Cohere API key
+        cohere_api_key = st.secrets["COHERE_API_KEY"]
         if st.button("Process") and docs:
             with st.spinner("Processing..."):
                 try:
@@ -160,7 +160,8 @@ def main():
         if question and st.session_state['faiss_index'] is not None and st.session_state['chunks'] is not None:
             with st.spinner("Thinking..."):
                 try:
-                    cohere_api_key = os.getenv("COHERE_API_KEY")
+                    # Use st.secrets for Cohere API key
+                    cohere_api_key = st.secrets["COHERE_API_KEY"]
                     # Retrieve top 3 relevant chunks
                     top_chunks = search_faiss_index(st.session_state['faiss_index'], st.session_state['chunks'], question, cohere_api_key, top_k=3)
                     context = "\n".join(top_chunks)
