@@ -1,9 +1,9 @@
 import streamlit as st
-# Remove: from dotenv import load_dotenv
-# Remove: import os
 import time
 from datetime import datetime
 import streamlit.components.v1 as components
+import cohere
+from utils import get_document_text, get_chunked_text, get_faiss_index, search_faiss_index
 
 
 def get_cohere_response(question, context, cohere_api_key):
@@ -23,9 +23,7 @@ def get_cohere_response(question, context, cohere_api_key):
 
 
 def main():
-    # Use Streamlit secrets.toml for API keys
-    # In .streamlit/secrets.toml, add: COHERE_API_KEY = "your-cohere-api-key-here"
-    st.set_page_config(page_title='PDF & DOCX ChatBot', page_icon=':sparkles:', layout='wide', initial_sidebar_state='auto')
+        st.set_page_config(page_title='PDF & DOCX ChatBot', page_icon=':sparkles:', layout='wide', initial_sidebar_state='auto')
     st.markdown('''
         <style>
         body, .stApp { background: #181c24 !important; }
