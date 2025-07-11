@@ -23,7 +23,7 @@ def get_cohere_response(question, context, cohere_api_key):
 
 
 def main():
-        st.set_page_config(page_title='PDF & DOCX ChatBot', page_icon=':sparkles:', layout='wide', initial_sidebar_state='auto')
+    st.set_page_config(page_title='PDF & DOCX ChatBot', page_icon=':sparkles:', layout='wide', initial_sidebar_state='auto')
     st.markdown('''
         <style>
         body, .stApp { background: #181c24 !important; }
