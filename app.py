@@ -34,11 +34,11 @@ def get_chat_history_file():
     return CHAT_HISTORY_FILE_TEMPLATE.format(session_id=session_id)
 
 def save_chat_history(chat_history):
-    """Save chat history to persistent storage (session-isolated, limited to 10 conversations)."""
+    """Save chat history to persistent storage (session-isolated, max 10 conversations)."""
     ensure_data_dir()
     filepath = get_chat_history_file()
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    # Keep only the last 10 conversations
+    # Keep maximum 10 conversations, remove oldest if exceeded
     limited_history = chat_history[-10:] if len(chat_history) > 10 else chat_history
     with open(filepath, 'w') as f:
         json.dump(limited_history, f, indent=2)
@@ -54,12 +54,6 @@ def load_chat_history():
         except:
             return []
     return []
-
-def get_last_n_conversations(n=10):
-    """Get the last N conversations from chat history."""
-    all_history = load_chat_history()
-    # Return only the last N items
-    return all_history[-n:] if len(all_history) > n else all_history
 
 def cleanup_old_sessions(days=10):
     """Clean up sessions older than N days (keeps data uploaded for 10 days)."""
@@ -249,8 +243,9 @@ def main():
     if 'chunks' not in st.session_state:
         st.session_state['chunks'] = None
     if 'chat_history' not in st.session_state:
-        # Load last 10 conversations only
-        st.session_state['chat_history'] = get_last_n_conversations(n=10)
+        # Load last 10 conversations (max limit)
+        all_history = load_chat_history()
+        st.session_state['chat_history'] = all_history[-10:] if len(all_history) > 10 else all_history
     if 'document_loaded' not in st.session_state:
         st.session_state['document_loaded'] = False
     if 'current_response' not in st.session_state:
@@ -396,7 +391,7 @@ def main():
     
     with right:
         st.markdown('<div class="sticky-sidebar">', unsafe_allow_html=True)
-        st.subheader(f"📚 Chat History ({len(st.session_state['chat_history'])}/10)")
+        st.subheader(f"📚 Chat History ({min(len(st.session_state['chat_history']), 10)}/10)")
         
         if st.session_state['chat_history']:
             # Display in reverse order (newest first)
