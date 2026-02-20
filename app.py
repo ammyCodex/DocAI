@@ -217,15 +217,12 @@ def main():
         st.session_state['chat_history'] = get_chat_history_by_date(days=10)
     if 'document_loaded' not in st.session_state:
         st.session_state['document_loaded'] = False
-    if 'expanded_chats' not in st.session_state:
-        st.session_state['expanded_chats'] = set()
 
     if st.button("🧹 Clear Chat History"):
         st.session_state['faiss_index'] = None
         st.session_state['chunks'] = None
         st.session_state['chat_history'] = []
         st.session_state['document_loaded'] = False
-        st.session_state['expanded_chats'] = set()
         save_chat_history([])  # Clear persistent storage
         message = st.success("Chat history cleared!", icon="✅")
         time.sleep(2)
@@ -285,7 +282,14 @@ def main():
         if not st.session_state['document_loaded']:
             st.info("👈 Upload and process a document to get started")
         else:
-            question = st.text_input('Ask a question about your document:')
+            # Initialize question key for clearing input
+            if 'question_key' not in st.session_state:
+                st.session_state['question_key'] = 0
+            
+            question = st.text_input(
+                'Ask a question about your document:',
+                key=f"question_input_{st.session_state['question_key']}"
+            )
             
             if question:
                 with st.spinner("Thinking..."):
@@ -327,6 +331,10 @@ def main():
                                 typed += char
                                 placeholder.markdown(typed)
                                 time.sleep(0.01)
+                            
+                            # Clear input box by incrementing key
+                            st.session_state['question_key'] += 1
+                            st.rerun()
                     
                     except Exception as e:
                         st.error(f"❌ Error generating response: {e}")
@@ -337,45 +345,27 @@ def main():
         
         if st.session_state['chat_history']:
             for idx, entry in enumerate(reversed(st.session_state['chat_history'])):
-                chat_id = f"{idx}_{entry['user_time']}"
                 user_time = entry.get('user_time', '')
                 bot_time = entry.get('bot_time', '')
-                question = entry['question'][:50] + "..." if len(entry['question']) > 50 else entry['question']
+                question = entry['question'][:40] + "..." if len(entry['question']) > 40 else entry['question']
                 
-                # Collapsible chat item
-                is_expanded = chat_id in st.session_state['expanded_chats']
-                
-                col1, col2 = st.columns([0.9, 0.1])
-                with col1:
-                    if st.button(f"💬 {question}", key=f"q_{chat_id}", use_container_width=True):
-                        if is_expanded:
-                            st.session_state['expanded_chats'].discard(chat_id)
-                        else:
-                            st.session_state['expanded_chats'].add(chat_id)
-                        st.rerun()
-                
-                # Show full content if expanded
-                if is_expanded:
+                # Use expander for collapsible chat items
+                with st.expander(f"💬 {question}", expanded=False):
                     st.markdown(f'''
-                    <div class="qa-group" style="margin-top: 0.5rem; padding: 1rem;">
-                        <div class="chat-msg">
-                            <div class="chat-avatar">🧑</div>
-                            <div style="width: 100%;">
-                                <div class="chat-bubble" style="max-width: 100%; word-wrap: break-word;">{entry["question"]}</div>
-                                <div class="chat-timestamp">{user_time}</div>
-                            </div>
+                    <div class="qa-group" style="padding: 1rem; border: 1px solid #4f8bf9;">
+                        <div style="margin-bottom: 0.8rem;">
+                            <div style="color: #ffe066; font-weight: bold; margin-bottom: 0.3rem;">🧑 Question:</div>
+                            <div style="color: #fff; word-wrap: break-word; margin-left: 1rem;">{entry["question"]}</div>
+                            <div style="color: #b0b0b0; font-size: 0.8rem; margin-top: 0.3rem; margin-left: 1rem;">{user_time}</div>
                         </div>
-                        <div style="margin-top: 0.8rem;"></div>
-                        <div class="chat-msg">
-                            <div class="chat-avatar chat-avatar-bot">🤖</div>
-                            <div style="width: 100%;">
-                                <div class="chat-bubble chat-bubble-bot" style="max-width: 100%; word-wrap: break-word;">{entry["answer"]}</div>
-                                <div class="chat-timestamp">{bot_time}</div>
-                            </div>
+                        <div style="border-top: 1px solid #434654; margin: 0.8rem 0;"></div>
+                        <div>
+                            <div style="color: #4f8bf9; font-weight: bold; margin-bottom: 0.3rem;">🤖 Answer:</div>
+                            <div style="color: #fff; word-wrap: break-word; margin-left: 1rem;">{entry["answer"]}</div>
+                            <div style="color: #b0b0b0; font-size: 0.8rem; margin-top: 0.3rem; margin-left: 1rem;">{bot_time}</div>
                         </div>
                     </div>
                     ''', unsafe_allow_html=True)
-                    st.divider()
         else:
             st.info('No chat history yet.')
         
