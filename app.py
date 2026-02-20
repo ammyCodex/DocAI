@@ -51,12 +51,32 @@ def get_cohere_response(question, context, cohere_api_key):
             {"role": "system", "content": system_content},
             {"role": "user", "content": question},
         ],
-        "max_tokens": 64,
+        "max_output_tokens": 64,
         "temperature": 0.2,
     }
     r = requests.post("https://api.cohere.com/v1/chat", headers=headers, json=payload, timeout=30)
-    r.raise_for_status()
-    data = r.json()
+    # If the request fails with a 400, provide more context and try an alternate payload shape
+    if r.status_code == 400:
+        first_text = r.text
+        # Some Cohere Chat variants expect `content` to be an array of typed segments
+        alt_payload = {
+            "model": "command-xlarge",
+            "messages": [
+                {"role": "system", "content": [{"type": "text", "text": system_content}]},
+                {"role": "user", "content": [{"type": "text", "text": question}]},
+            ],
+            "max_output_tokens": 64,
+            "temperature": 0.2,
+        }
+        r2 = requests.post("https://api.cohere.com/v1/chat", headers=headers, json=alt_payload, timeout=30)
+        if r2.ok:
+            data = r2.json()
+        else:
+            # Surface both responses for debugging
+            raise Exception(f"Cohere chat bad request. first: {first_text}; retry: {r2.status_code} {r2.text}")
+    else:
+        r.raise_for_status()
+        data = r.json()
     if isinstance(data, dict):
         if "message" in data:
             m = data["message"]
