@@ -94,13 +94,13 @@ def get_cohere_response(question, context, cohere_api_key, model="command-a-03-2
     if not question:
         raise ValueError("Empty question provided")
     
-    # RAG system prompt - optimized for concise, summarized answers
+    # RAG system prompt - optimized for aggressive summarization
     system_prompt = (
-        "You are an expert document analyst. Based on the provided context, "
-        "provide a CONCISE and SUMMARIZED answer to the user's question. "
-        "Keep your response brief and to the point - maximum 150 tokens. "
-        "Focus on key facts and avoid unnecessary details. "
-        "If the answer is not found in the context, say 'This information is not available in the document.'"
+        "You are an expert document analyst. SUMMARIZE your answer in 2-3 sentences maximum. "
+        "Based on the provided context, extract ONLY the most essential facts that directly answer the question. "
+        "Use bullet points if listing multiple items. Avoid explanations, examples, or redundant information. "
+        "Maximum 100 tokens - be extremely concise. "
+        "If the answer is not found, say 'Not available in document.'"
     )
     
     # Build the RAG prompt with clear separation
@@ -114,10 +114,10 @@ def get_cohere_response(question, context, cohere_api_key, model="command-a-03-2
         response = co.chat(
             model=model,
             message=user_message,
-            max_tokens=150,  # Concise answers
-            temperature=0.3,  # Lower temp for consistency in factual QA
+            max_tokens=100,  # Aggressive summarization for concise answers
+            temperature=0.2,  # Very low temp for focused factual responses
         )
-        
+        print(response)  # Debug: log full response object
         # Extract text from response
         if hasattr(response, "text"):
             return response.text.strip()

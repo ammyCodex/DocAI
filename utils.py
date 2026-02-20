@@ -30,10 +30,10 @@ def get_document_text(files):
     return text
 
 
-def get_chunked_text(text, chunk_size=1000, chunk_overlap=100):
+def get_chunked_text(text, chunk_size=600, chunk_overlap=300):
     """
     Split text into overlapping chunks for better RAG retrieval.
-    Optimized chunk size for Cohere embeddings and context length.
+    Uses 50% overlap (300/600) for better semantic context preservation.
     """
     chunks = []
     if not text or not text.strip():
