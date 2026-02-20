@@ -6,94 +6,72 @@ import cohere
 from utils import get_document_text, get_chunked_text, get_faiss_index, search_faiss_index
 
 
-def get_cohere_response(question, context, cohere_api_key):
+def get_cohere_response(question, context, cohere_api_key, model="command-r-plus"):
+    """
+    Generate a response using Cohere's Chat API with RAG context.
+    Uses command-r-plus for optimal RAG performance.
+    """
     co = cohere.Client(cohere_api_key)
-    system_content = (
-        f"Context:\n{context}\n\n"
-        f"Answer concisely, ideally in one word or a short phrase."
+    
+    # Validate inputs
+    question = (question or "").strip()
+    context = (context or "").strip()
+    
+    if not question:
+        raise ValueError("Empty question provided")
+    
+    # RAG system prompt - optimized for document Q&A
+    system_prompt = (
+        "You are an expert document analyst. Based on the provided context, "
+        "answer the user's question accurately and concisely. "
+        "If the answer is not found in the context, say 'This information is not available in the document.'"
     )
-    # Prefer the Chat API if available on the client
+    
+    # Build the RAG prompt with clear separation
+    rag_context = f"Document Context:\n{context}\n" if context else "No context available.\n"
+    
     try:
-        if hasattr(co, "chat"):
-            resp = co.chat(
-                model="command-xlarge",
-                messages=[
-                    {"role": "system", "content": system_content},
-                    {"role": "user", "content": question},
-                ],
-                max_tokens=64,
-                temperature=0.2,
-            )
-            # Try a few common response shapes
-            if hasattr(resp, "message") and isinstance(resp.message, dict):
-                return resp.message.get("content", "").strip()
-            if hasattr(resp, "generations"):
-                return resp.generations[0].text.strip()
-            if isinstance(resp, dict):
-                if "message" in resp:
-                    m = resp["message"]
-                    if isinstance(m, dict) and "content" in m:
-                        return m["content"].strip()
-                if "output" in resp and isinstance(resp["output"], list) and resp["output"]:
-                    o = resp["output"][0]
-                    if isinstance(o, dict) and "content" in o:
-                        return o["content"].strip()
-            return str(resp)
-    except Exception:
-        pass
-
-    # Fallback to HTTP Chat endpoint (covers client versions without chat)
-    import requests
-    headers = {"Authorization": f"Bearer {cohere_api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": "command-xlarge",
-        "messages": [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": question},
-        ],
-        "max_output_tokens": 64,
-        "temperature": 0.2,
-    }
-    r = requests.post("https://api.cohere.com/v1/chat", headers=headers, json=payload, timeout=30)
-    # If the request fails with a 400, provide more context and try an alternate payload shape
-    if r.status_code == 400:
-        first_text = r.text
-        # Some Cohere Chat variants expect `content` to be an array of typed segments
-        alt_payload = {
-            "model": "command-xlarge",
-            "messages": [
-                {"role": "system", "content": [{"type": "text", "text": system_content}]},
-                {"role": "user", "content": [{"type": "text", "text": question}]},
+        # Use Cohere's chat method with RAG-optimized parameters
+        response = co.chat(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": f"{rag_context}\nQuestion: {question}"
+                }
             ],
-            "max_output_tokens": 64,
-            "temperature": 0.2,
-        }
-        r2 = requests.post("https://api.cohere.com/v1/chat", headers=headers, json=alt_payload, timeout=30)
-        if r2.ok:
-            data = r2.json()
+            max_tokens=256,  # Reasonable limit for detailed answers
+            temperature=0.3,  # Lower temp for consistency in factual QA
+        )
+        
+        # Extract text from response
+        if hasattr(response, "text"):
+            return response.text.strip()
+        elif hasattr(response, "message"):
+            if isinstance(response.message, dict) and "content" in response.message:
+                return response.message["content"].strip()
+            return str(response.message).strip()
         else:
-            # Surface both responses for debugging
-            raise Exception(f"Cohere chat bad request. first: {first_text}; retry: {r2.status_code} {r2.text}")
-    else:
-        r.raise_for_status()
-        data = r.json()
-    if isinstance(data, dict):
-        if "message" in data:
-            m = data["message"]
-            if isinstance(m, dict) and "content" in m:
-                return m["content"].strip()
-            return str(m)
-        if "output" in data and isinstance(data["output"], list) and data["output"]:
-            o = data["output"][0]
-            if isinstance(o, dict) and "content" in o:
-                return o["content"].strip()
-        if "generations" in data and isinstance(data["generations"], list) and data["generations"]:
-            return data["generations"][0].get("text", "").strip()
-    return ""
+            # Fallback for different response structures
+            return str(response).strip()
+            
+    except Exception as e:
+        # Log error and raise with context
+        raise Exception(f"Cohere API error: {str(e)}")
 
 
 def main():
-    st.set_page_config(page_title='PDF & DOCX ChatBot', page_icon=':sparkles:', layout='wide', initial_sidebar_state='auto')
+    st.set_page_config(
+        page_title='PDF & DOCX ChatBot',
+        page_icon=':sparkles:',
+        layout='wide',
+        initial_sidebar_state='auto'
+    )
+    
     st.markdown('''
         <style>
         body, .stApp { background: #181c24 !important; }
@@ -181,11 +159,14 @@ def main():
         st.session_state['chunks'] = None
     if 'chat_history' not in st.session_state:
         st.session_state['chat_history'] = []
+    if 'document_loaded' not in st.session_state:
+        st.session_state['document_loaded'] = False
 
     if st.button("🧹 Clear Chat History"):
         st.session_state['faiss_index'] = None
         st.session_state['chunks'] = None
         st.session_state['chat_history'] = []
+        st.session_state['document_loaded'] = False
         message = st.success("Chat history cleared!", icon="✅")
         time.sleep(2)
         message.empty()
@@ -195,61 +176,103 @@ def main():
         st.markdown('''
             <div style="background: linear-gradient(90deg, #23263a 0%, #434654 100%); padding: 1.5rem 1rem 1.2rem 1rem; border-radius: 0 0 20px 20px; margin-bottom: 1.5rem; box-shadow: 0 4px 16px 0 rgba(67,70,84,0.15);">
                 <h2 style="color: #fff; font-size: 1.8rem; font-weight: 800; margin-bottom: 0.2rem; letter-spacing: -0.5px;">
-                    <span style="vertical-align: middle;">🧠✨</span> PDF & DOCX ChatBot
+                    <span style="vertical-align: middle;">🧠✨</span> DocAI
                 </h2>
                 <div style="color: #ffe066; font-size: 1rem; font-weight: 500; max-width: 300px;">
-                    Instantly turn your PDF & DOCX documents into a chat experience. Upload, ask, and learn!
+                    Smart document Q&A powered by RAG
                 </div>
             </div>
         ''', unsafe_allow_html=True)
-        st.subheader("Upload & Process Document")
-        docs = st.file_uploader("Upload PDF or DOCX file(s)", accept_multiple_files=True, type=["pdf", "docx"])
-        # Use st.secrets for Cohere API key
-        cohere_api_key = st.secrets["COHERE_API_KEY"]
-        if st.button("Process") and docs:
-            with st.spinner("Processing..."):
+        
+        st.subheader("📄 Upload & Process Document")
+        docs = st.file_uploader(
+            "Upload PDF or DOCX file(s)",
+            accept_multiple_files=True,
+            type=["pdf", "docx"]
+        )
+        
+        # Get API key
+        try:
+            cohere_api_key = st.secrets["COHERE_API_KEY"]
+        except KeyError:
+            st.error("❌ COHERE_API_KEY not found in secrets. Please add it to .streamlit/secrets.toml")
+            st.stop()
+        
+        if st.button("⚙️ Process Documents") and docs:
+            with st.spinner("Processing documents..."):
                 try:
                     raw_text = get_document_text(docs)
-                    chunks = get_chunked_text(raw_text)
-                    index, embeddings = get_faiss_index(chunks, cohere_api_key)
-                    st.session_state['faiss_index'] = index
-                    st.session_state['chunks'] = chunks
-                    st.success("Documents processed! You can now ask questions.")
+                    if not raw_text.strip():
+                        st.error("No text could be extracted from the documents")
+                    else:
+                        chunks = get_chunked_text(raw_text)
+                        st.info(f"Created {len(chunks)} chunks from {len(raw_text)} characters")
+                        
+                        index, embeddings = get_faiss_index(chunks, cohere_api_key)
+                        st.session_state['faiss_index'] = index
+                        st.session_state['chunks'] = chunks
+                        st.session_state['document_loaded'] = True
+                        st.success(f"✅ Documents processed! {len(chunks)} chunks indexed.")
                 except Exception as e:
-                    st.error(f"Error processing documents: {e}")
+                    st.error(f"❌ Error processing documents: {e}")
 
     # Main area: center for chat, right for chat history
-    center, right = st.columns([2,1])
+    center, right = st.columns([2, 1])
+    
     with center:
-        st.subheader("Chat")
-        question = st.text_input('Ask a question about your document:')
-        # Remove display of latest Q&A in the main area
-        # Only show chat input here
-        if question and st.session_state['faiss_index'] is not None and st.session_state['chunks'] is not None:
-            with st.spinner("Thinking..."):
-                try:
-                    # Use st.secrets for Cohere API key
-                    cohere_api_key = st.secrets["COHERE_API_KEY"]
-                    # Retrieve top 3 relevant chunks
-                    top_chunks = search_faiss_index(st.session_state['faiss_index'], st.session_state['chunks'], question, cohere_api_key, top_k=3)
-                    context = "\n".join(top_chunks)
-                    user_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    response = get_cohere_response(question, context, cohere_api_key)
-                    bot_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    st.session_state['chat_history'].append({'question': question, 'answer': response, 'user_time': user_time, 'bot_time': bot_time})
-                    # Typewriter effect
-                    placeholder = st.empty()
-                    typed = ""
-                    for char in response:
-                        typed += char
-                        placeholder.markdown(typed)
-                        time.sleep(0.01)
-                except Exception as e:
-                    st.error(f"Error generating response: {e}")
+        st.subheader("💬 Chat with Your Document")
+        
+        if not st.session_state['document_loaded']:
+            st.info("👈 Upload and process a document to get started")
+        else:
+            question = st.text_input('Ask a question about your document:')
+            
+            if question:
+                with st.spinner("Thinking..."):
+                    try:
+                        # Retrieve top 3 relevant chunks
+                        top_chunks = search_faiss_index(
+                            st.session_state['faiss_index'],
+                            st.session_state['chunks'],
+                            question,
+                            cohere_api_key,
+                            top_k=3
+                        )
+                        
+                        if not top_chunks:
+                            st.warning("No relevant content found in document")
+                        else:
+                            context = "\n---\n".join(top_chunks)
+                            user_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            
+                            # Generate response
+                            response = get_cohere_response(question, context, cohere_api_key)
+                            bot_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            
+                            # Add to history
+                            st.session_state['chat_history'].append({
+                                'question': question,
+                                'answer': response,
+                                'user_time': user_time,
+                                'bot_time': bot_time
+                            })
+                            
+                            # Display with typewriter effect
+                            st.markdown("### Answer:")
+                            placeholder = st.empty()
+                            typed = ""
+                            for char in response:
+                                typed += char
+                                placeholder.markdown(typed)
+                                time.sleep(0.01)
+                    
+                    except Exception as e:
+                        st.error(f"❌ Error generating response: {e}")
+    
     with right:
         st.markdown('<div class="sticky-sidebar">', unsafe_allow_html=True)
-        st.subheader("Chat History")
-        # Restore simple chat history rendering
+        st.subheader("📚 Chat History")
+        
         if st.session_state['chat_history']:
             for entry in reversed(st.session_state['chat_history']):
                 user_time = entry.get('user_time', '')
@@ -274,6 +297,7 @@ def main():
                 ''', unsafe_allow_html=True)
         else:
             st.info('No chat history yet.')
+        
         st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == '__main__':
