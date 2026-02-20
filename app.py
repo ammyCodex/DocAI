@@ -8,18 +8,68 @@ from utils import get_document_text, get_chunked_text, get_faiss_index, search_f
 
 def get_cohere_response(question, context, cohere_api_key):
     co = cohere.Client(cohere_api_key)
-    prompt = (
+    system_content = (
         f"Context:\n{context}\n\n"
-        f"Question: {question}\n"
-        f"Answer (respond concisely, ideally in one word or a short phrase):"
+        f"Answer concisely, ideally in one word or a short phrase."
     )
-    response = co.generate(
-        model="command-r-plus",
-        prompt=prompt,
-        max_tokens=64,
-        temperature=0.2
-    )
-    return response.generations[0].text.strip()
+    # Prefer the Chat API if available on the client
+    try:
+        if hasattr(co, "chat"):
+            resp = co.chat(
+                model="command-xlarge",
+                messages=[
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": question},
+                ],
+                max_tokens=64,
+                temperature=0.2,
+            )
+            # Try a few common response shapes
+            if hasattr(resp, "message") and isinstance(resp.message, dict):
+                return resp.message.get("content", "").strip()
+            if hasattr(resp, "generations"):
+                return resp.generations[0].text.strip()
+            if isinstance(resp, dict):
+                if "message" in resp:
+                    m = resp["message"]
+                    if isinstance(m, dict) and "content" in m:
+                        return m["content"].strip()
+                if "output" in resp and isinstance(resp["output"], list) and resp["output"]:
+                    o = resp["output"][0]
+                    if isinstance(o, dict) and "content" in o:
+                        return o["content"].strip()
+            return str(resp)
+    except Exception:
+        pass
+
+    # Fallback to HTTP Chat endpoint (covers client versions without chat)
+    import requests
+    headers = {"Authorization": f"Bearer {cohere_api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "command-xlarge",
+        "messages": [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": question},
+        ],
+        "max_tokens": 64,
+        "temperature": 0.2,
+    }
+    r = requests.post("https://api.cohere.com/v1/chat", headers=headers, json=payload, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+    if isinstance(data, dict):
+        if "message" in data:
+            m = data["message"]
+            if isinstance(m, dict) and "content" in m:
+                return m["content"].strip()
+            return str(m)
+        if "output" in data and isinstance(data["output"], list) and data["output"]:
+            o = data["output"][0]
+            if isinstance(o, dict) and "content" in o:
+                return o["content"].strip()
+        if "generations" in data and isinstance(data["generations"], list) and data["generations"]:
+            return data["generations"][0].get("text", "").strip()
+    return ""
 
 
 def main():
