@@ -6,10 +6,10 @@ import cohere
 from utils import get_document_text, get_chunked_text, get_faiss_index, search_faiss_index
 
 
-def get_cohere_response(question, context, cohere_api_key, model="command-r-plus"):
+def get_cohere_response(question, context, cohere_api_key, model="command-a-03-2025"):
     """
     Generate a response using Cohere's Chat API with RAG context.
-    Uses command-r-plus for optimal RAG performance.
+    Uses command-a-03-2025 for optimal RAG performance.
     """
     co = cohere.Client(cohere_api_key)
     
