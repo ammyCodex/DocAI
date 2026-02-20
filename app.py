@@ -1,9 +1,52 @@
 import streamlit as st
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 import cohere
+import json
+import os
 from utils import get_document_text, get_chunked_text, get_faiss_index, search_faiss_index
+
+
+# Persistent storage for chat history
+DATA_DIR = ".streamlit/data"
+CHAT_HISTORY_FILE = os.path.join(DATA_DIR, "chat_history.json")
+
+def ensure_data_dir():
+    """Create data directory if it doesn't exist."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+def save_chat_history(chat_history):
+    """Save chat history to persistent storage."""
+    ensure_data_dir()
+    with open(CHAT_HISTORY_FILE, 'w') as f:
+        json.dump(chat_history, f, indent=2)
+
+def load_chat_history():
+    """Load chat history from persistent storage."""
+    ensure_data_dir()
+    if os.path.exists(CHAT_HISTORY_FILE):
+        try:
+            with open(CHAT_HISTORY_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+def get_chat_history_by_date(days=10):
+    """Get chat history from the past N days."""
+    all_history = load_chat_history()
+    cutoff_date = datetime.now() - timedelta(days=days)
+    
+    filtered = []
+    for entry in all_history:
+        try:
+            entry_date = datetime.fromisoformat(entry['user_time'].split()[0])
+            if entry_date >= cutoff_date:
+                filtered.append(entry)
+        except:
+            pass
+    return filtered
 
 
 def get_cohere_response(question, context, cohere_api_key, model="command-a-03-2025"):
@@ -170,15 +213,20 @@ def main():
     if 'chunks' not in st.session_state:
         st.session_state['chunks'] = None
     if 'chat_history' not in st.session_state:
-        st.session_state['chat_history'] = []
+        # Load historical chat history from past 10 days
+        st.session_state['chat_history'] = get_chat_history_by_date(days=10)
     if 'document_loaded' not in st.session_state:
         st.session_state['document_loaded'] = False
+    if 'expanded_chats' not in st.session_state:
+        st.session_state['expanded_chats'] = set()
 
     if st.button("🧹 Clear Chat History"):
         st.session_state['faiss_index'] = None
         st.session_state['chunks'] = None
         st.session_state['chat_history'] = []
         st.session_state['document_loaded'] = False
+        st.session_state['expanded_chats'] = set()
+        save_chat_history([])  # Clear persistent storage
         message = st.success("Chat history cleared!", icon="✅")
         time.sleep(2)
         message.empty()
@@ -268,6 +316,8 @@ def main():
                                 'user_time': user_time,
                                 'bot_time': bot_time
                             })
+                            # Save to persistent storage
+                            save_chat_history(st.session_state['chat_history'])
                             
                             # Display with typewriter effect
                             st.markdown("### Answer:")
@@ -283,30 +333,49 @@ def main():
     
     with right:
         st.markdown('<div class="sticky-sidebar">', unsafe_allow_html=True)
-        st.subheader("📚 Chat History")
+        st.subheader("📚 Chat History (Past 10 days)")
         
         if st.session_state['chat_history']:
-            for entry in reversed(st.session_state['chat_history']):
+            for idx, entry in enumerate(reversed(st.session_state['chat_history'])):
+                chat_id = f"{idx}_{entry['user_time']}"
                 user_time = entry.get('user_time', '')
                 bot_time = entry.get('bot_time', '')
-                st.markdown(f'''
-                <div class="qa-group">
-                    <div class="chat-msg">
-                        <div class="chat-avatar">🧑</div>
-                        <div>
-                            <div class="chat-bubble">{entry["question"]}</div>
-                            <div class="chat-timestamp">{user_time}</div>
+                question = entry['question'][:50] + "..." if len(entry['question']) > 50 else entry['question']
+                
+                # Collapsible chat item
+                is_expanded = chat_id in st.session_state['expanded_chats']
+                
+                col1, col2 = st.columns([0.9, 0.1])
+                with col1:
+                    if st.button(f"💬 {question}", key=f"q_{chat_id}", use_container_width=True):
+                        if is_expanded:
+                            st.session_state['expanded_chats'].discard(chat_id)
+                        else:
+                            st.session_state['expanded_chats'].add(chat_id)
+                        st.rerun()
+                
+                # Show full content if expanded
+                if is_expanded:
+                    st.markdown(f'''
+                    <div class="qa-group" style="margin-top: 0.5rem; padding: 1rem;">
+                        <div class="chat-msg">
+                            <div class="chat-avatar">🧑</div>
+                            <div style="width: 100%;">
+                                <div class="chat-bubble" style="max-width: 100%; word-wrap: break-word;">{entry["question"]}</div>
+                                <div class="chat-timestamp">{user_time}</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 0.8rem;"></div>
+                        <div class="chat-msg">
+                            <div class="chat-avatar chat-avatar-bot">🤖</div>
+                            <div style="width: 100%;">
+                                <div class="chat-bubble chat-bubble-bot" style="max-width: 100%; word-wrap: break-word;">{entry["answer"]}</div>
+                                <div class="chat-timestamp">{bot_time}</div>
+                            </div>
                         </div>
                     </div>
-                    <div class="chat-msg">
-                        <div class="chat-avatar chat-avatar-bot">🤖</div>
-                        <div>
-                            <div class="chat-bubble chat-bubble-bot">{entry["answer"]}</div>
-                            <div class="chat-timestamp">{bot_time}</div>
-                        </div>
-                    </div>
-                </div>
-                ''', unsafe_allow_html=True)
+                    ''', unsafe_allow_html=True)
+                    st.divider()
         else:
             st.info('No chat history yet.')
         
