@@ -31,19 +31,13 @@ def get_cohere_response(question, context, cohere_api_key, model="command-r-plus
     rag_context = f"Document Context:\n{context}\n" if context else "No context available.\n"
     
     try:
+        # Build the complete user message with context and question
+        user_message = f"{system_prompt}\n\n{rag_context}\nQuestion: {question}"
+        
         # Use Cohere's chat method with RAG-optimized parameters
         response = co.chat(
             model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": f"{rag_context}\nQuestion: {question}"
-                }
-            ],
+            message=user_message,
             max_tokens=256,  # Reasonable limit for detailed answers
             temperature=0.3,  # Lower temp for consistency in factual QA
         )
@@ -51,6 +45,8 @@ def get_cohere_response(question, context, cohere_api_key, model="command-r-plus
         # Extract text from response
         if hasattr(response, "text"):
             return response.text.strip()
+        elif isinstance(response, dict) and "text" in response:
+            return response["text"].strip()
         elif hasattr(response, "message"):
             if isinstance(response.message, dict) and "content" in response.message:
                 return response.message["content"].strip()
