@@ -332,9 +332,11 @@ def main():
                                 placeholder.markdown(typed)
                                 time.sleep(0.01)
                             
+                            # Pause before clearing input
+                            time.sleep(2)
+                            
                             # Clear input box by incrementing key
                             st.session_state['question_key'] += 1
-                            st.rerun()
                     
                     except Exception as e:
                         st.error(f"❌ Error generating response: {e}")
