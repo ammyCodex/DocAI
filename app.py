@@ -316,70 +316,70 @@ def main():
     with center:
         st.subheader("💬 Chat with Your Document")
         
+        # Initialize question key for clearing input
+        if 'question_key' not in st.session_state:
+            st.session_state['question_key'] = 0
+        
+        # Input box always visible (before and after upload)
+        question = st.text_input(
+            'Ask a question about your document:',
+            placeholder='Upload a document first to get started...' if not st.session_state['document_loaded'] else 'Type your question here...',
+            key=f"question_input_{st.session_state['question_key']}"
+        )
+        
         if not st.session_state['document_loaded']:
-            st.info("👈 Upload and process a document to get started")
-        else:
-            # Initialize question key for clearing input
-            if 'question_key' not in st.session_state:
-                st.session_state['question_key'] = 0
-            
-            # Input box always shown first
-            question = st.text_input(
-                'Ask a question about your document:',
-                key=f"question_input_{st.session_state['question_key']}"
-            )
-            
-            # Show processing and results below input box
-            if question:
-                with st.spinner("Thinking..."):
-                    try:
-                        # Retrieve top 3 relevant chunks
-                        top_chunks = search_faiss_index(
-                            st.session_state['faiss_index'],
-                            st.session_state['chunks'],
-                            question,
-                            cohere_api_key,
-                            top_k=3
-                        )
+            st.info("👈 Upload and process a document in the sidebar to get started")
+        elif question:
+            # Only process if document is loaded AND question is asked
+            with st.spinner("Thinking..."):
+                try:
+                    # Retrieve top 3 relevant chunks
+                    top_chunks = search_faiss_index(
+                        st.session_state['faiss_index'],
+                        st.session_state['chunks'],
+                        question,
+                        cohere_api_key,
+                        top_k=3
+                    )
+                    
+                    if not top_chunks:
+                        st.warning("No relevant content found in document")
+                    else:
+                        context = "\n---\n".join(top_chunks)
+                        user_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         
-                        if not top_chunks:
-                            st.warning("No relevant content found in document")
-                        else:
-                            context = "\n---\n".join(top_chunks)
-                            user_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            
-                            # Generate response
-                            response = get_cohere_response(question, context, cohere_api_key)
-                            bot_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            
-                            # Add to history
-                            st.session_state['chat_history'].append({
-                                'question': question,
-                                'answer': response,
-                                'user_time': user_time,
-                                'bot_time': bot_time
-                            })
-                            # Save to persistent storage
-                            save_chat_history(st.session_state['chat_history'])
-                    
-                    except Exception as e:
-                        st.error(f"❌ Error generating response: {e}")
+                        # Generate response
+                        response = get_cohere_response(question, context, cohere_api_key)
+                        bot_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Add to history
+                        st.session_state['chat_history'].append({
+                            'question': question,
+                            'answer': response,
+                            'user_time': user_time,
+                            'bot_time': bot_time
+                        })
+                        # Save to persistent storage
+                        save_chat_history(st.session_state['chat_history'])
                 
-                # Display response after spinner completes (input box still visible above)
-                if 'response' in locals():
-                    st.markdown("### Answer:")
-                    placeholder = st.empty()
-                    typed = ""
-                    for char in response:
-                        typed += char
-                        placeholder.markdown(typed)
-                        time.sleep(0.01)
-                    
-                    # Pause before clearing input
-                    time.sleep(2)
-                    
-                    # Clear input box by incrementing key
-                    st.session_state['question_key'] += 1
+                except Exception as e:
+                    st.error(f"❌ Error generating response: {e}")
+            
+            # Display response after spinner completes (input box still visible above)
+            if 'response' in locals():
+                st.markdown("### Answer:")
+                placeholder = st.empty()
+                typed = ""
+                for char in response:
+                    typed += char
+                    placeholder.markdown(typed)
+                    time.sleep(0.01)
+                
+                # Pause before clearing input
+                time.sleep(2)
+                
+                # Clear input box by incrementing key
+                st.session_state['question_key'] += 1
     
     with right:
         st.markdown('<div class="sticky-sidebar">', unsafe_allow_html=True)
