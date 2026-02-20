@@ -391,17 +391,22 @@ def main():
     
     with right:
         st.markdown('<div class="sticky-sidebar">', unsafe_allow_html=True)
-        st.subheader(f"📚 Chat History ({min(len(st.session_state['chat_history']), 10)}/10)")
+        
+        # Enforce max 10 conversations in session state as well
+        if len(st.session_state['chat_history']) > 10:
+            st.session_state['chat_history'] = st.session_state['chat_history'][-10:]
+        
+        st.subheader(f"📚 Chat History ({len(st.session_state['chat_history'])}/10)")
         
         if st.session_state['chat_history']:
-            # Display in reverse order (newest first)
-            for idx, entry in enumerate(reversed(st.session_state['chat_history']), 1):
+            # Display in reverse order (newest first) - max 10 items
+            for idx, entry in enumerate(reversed(st.session_state['chat_history'][:10]), 1):
                 user_time = entry.get('user_time', '')
                 bot_time = entry.get('bot_time', '')
                 question = entry['question'][:35] + "..." if len(entry['question']) > 35 else entry['question']
                 
-                # Compact expander format
-                with st.expander(f"#{len(st.session_state['chat_history']) - idx + 1} · {question}", expanded=False):
+                # Compact expander format with correct numbering (newest = #1)
+                with st.expander(f"#{idx} · {question}", expanded=False):
                     st.markdown(f'**❓ Question** ({user_time.split()[1]})')
                     st.markdown(f"> {entry['question']}")
                     
