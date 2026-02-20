@@ -329,62 +329,79 @@ def main():
             key=f"question_input_{st.session_state['question_key']}"
         )
         
+        # Store current response in session state
+        if 'current_response' not in st.session_state:
+            st.session_state['current_response'] = None
+        if 'current_question' not in st.session_state:
+            st.session_state['current_question'] = None
+        
         if not st.session_state['document_loaded']:
             st.info("👈 Upload and process a document in the sidebar to get started")
             # Show alert if user tries to type without uploading
             if question:
                 st.error("📄 ❌ Please upload and process a document first before asking questions!")
         elif question:
-            # Only process if document is loaded AND question is asked
-            with st.spinner("Thinking..."):
-                try:
-                    # Retrieve top 3 relevant chunks
-                    top_chunks = search_faiss_index(
-                        st.session_state['faiss_index'],
-                        st.session_state['chunks'],
-                        question,
-                        cohere_api_key,
-                        top_k=3
-                    )
+            # Only process if a NEW question is asked (different from current)
+            if question != st.session_state['current_question']:
+                st.session_state['current_question'] = question
+                with st.spinner("Thinking..."):
+                    try:
+                        # Retrieve top 3 relevant chunks
+                        top_chunks = search_faiss_index(
+                            st.session_state['faiss_index'],
+                            st.session_state['chunks'],
+                            question,
+                            cohere_api_key,
+                            top_k=3
+                        )
+                        
+                        if not top_chunks:
+                            st.warning("No relevant content found in document")
+                            st.session_state['current_response'] = None
+                        else:
+                            context = "\n---\n".join(top_chunks)
+                            user_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            
+                            # Generate response
+                            response = get_cohere_response(question, context, cohere_api_key)
+                            bot_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            
+                            # Store response in session state
+                            st.session_state['current_response'] = {
+                                'text': response,
+                                'user_time': user_time,
+                                'bot_time': bot_time
+                            }
+                            
+                            # Add to history
+                            st.session_state['chat_history'].append({
+                                'question': question,
+                                'answer': response,
+                                'user_time': user_time,
+                                'bot_time': bot_time
+                            })
+                            # Save to persistent storage
+                            save_chat_history(st.session_state['chat_history'])
                     
-                    if not top_chunks:
-                        st.warning("No relevant content found in document")
-                    else:
-                        context = "\n---\n".join(top_chunks)
-                        user_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        
-                        # Generate response
-                        response = get_cohere_response(question, context, cohere_api_key)
-                        bot_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        
-                        # Add to history
-                        st.session_state['chat_history'].append({
-                            'question': question,
-                            'answer': response,
-                            'user_time': user_time,
-                            'bot_time': bot_time
-                        })
-                        # Save to persistent storage
-                        save_chat_history(st.session_state['chat_history'])
-                
-                except Exception as e:
-                    st.error(f"❌ Error generating response: {e}")
-            
-            # Display response after spinner completes (input box still visible above)
-            if 'response' in locals():
-                st.markdown("### Answer:")
-                placeholder = st.empty()
-                typed = ""
-                for char in response:
-                    typed += char
-                    placeholder.markdown(typed)
-                    time.sleep(0.01)
+                    except Exception as e:
+                        st.error(f"❌ Error generating response: {e}")
+                        st.session_state['current_response'] = None
                 
                 # Pause before clearing input
                 time.sleep(2)
                 
                 # Clear input box by incrementing key
                 st.session_state['question_key'] += 1
+        
+        # Display current response (stays until new output is generated)
+        if st.session_state['current_response']:
+            st.markdown("### Answer:")
+            placeholder = st.empty()
+            typed = ""
+            for char in st.session_state['current_response']['text']:
+                typed += char
+                placeholder.markdown(typed)
+                time.sleep(0.01)
     
     with right:
         st.markdown('<div class="sticky-sidebar">', unsafe_allow_html=True)
