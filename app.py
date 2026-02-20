@@ -94,10 +94,12 @@ def get_cohere_response(question, context, cohere_api_key, model="command-a-03-2
     if not question:
         raise ValueError("Empty question provided")
     
-    # RAG system prompt - optimized for document Q&A
+    # RAG system prompt - optimized for concise, summarized answers
     system_prompt = (
         "You are an expert document analyst. Based on the provided context, "
-        "answer the user's question accurately and concisely. "
+        "provide a CONCISE and SUMMARIZED answer to the user's question. "
+        "Keep your response brief and to the point - maximum 150 tokens. "
+        "Focus on key facts and avoid unnecessary details. "
         "If the answer is not found in the context, say 'This information is not available in the document.'"
     )
     
