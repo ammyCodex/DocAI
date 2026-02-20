@@ -38,7 +38,7 @@ def get_cohere_response(question, context, cohere_api_key, model="command-a-03-2
         response = co.chat(
             model=model,
             message=user_message,
-            max_tokens=256,  # Reasonable limit for detailed answers
+            max_tokens=150,  # Concise answers
             temperature=0.3,  # Lower temp for consistency in factual QA
         )
         
@@ -74,12 +74,28 @@ def main():
         .sticky-sidebar {
             position: sticky;
             top: 1.5rem;
-            max-height: 90vh;
+            max-height: 85vh;
             overflow-y: auto;
+            overflow-x: hidden;
             background: #23263a;
             border-radius: 14px;
             padding: 1rem 0.7rem 1rem 0.7rem;
             box-shadow: 0 2px 12px 0 rgba(67,70,84,0.10);
+        }
+        .sticky-sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .sticky-sidebar::-webkit-scrollbar-track {
+            background: #1a1e28;
+            border-radius: 10px;
+        }
+        .sticky-sidebar::-webkit-scrollbar-thumb {
+            background: #4f8bf9;
+            border-radius: 10px;
+            border: 2px solid #23263a;
+        }
+        .sticky-sidebar::-webkit-scrollbar-thumb:hover {
+            background: #6fa0ff;
         }
         .qa-group {
             background: #23263a;
