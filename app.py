@@ -329,6 +329,9 @@ def main():
         
         if not st.session_state['document_loaded']:
             st.info("👈 Upload and process a document in the sidebar to get started")
+            # Show alert if user tries to type without uploading
+            if question:
+                st.error("📄 ❌ Please upload and process a document first before asking questions!")
         elif question:
             # Only process if document is loaded AND question is asked
             with st.spinner("Thinking..."):
@@ -383,33 +386,24 @@ def main():
     
     with right:
         st.markdown('<div class="sticky-sidebar">', unsafe_allow_html=True)
-        st.subheader("📚 Chat History (Past 10 days)")
+        st.subheader(f"📚 Chat History ({len(st.session_state['chat_history'])}/10)")
         
         if st.session_state['chat_history']:
-            for idx, entry in enumerate(reversed(st.session_state['chat_history'])):
+            # Display in reverse order (newest first)
+            for idx, entry in enumerate(reversed(st.session_state['chat_history']), 1):
                 user_time = entry.get('user_time', '')
                 bot_time = entry.get('bot_time', '')
-                question = entry['question'][:40] + "..." if len(entry['question']) > 40 else entry['question']
+                question = entry['question'][:35] + "..." if len(entry['question']) > 35 else entry['question']
                 
-                # Use expander for collapsible chat items
-                with st.expander(f"💬 {question}", expanded=False):
-                    st.markdown(f'''
-                    <div class="qa-group" style="padding: 1rem; border: 1px solid #4f8bf9;">
-                        <div style="margin-bottom: 0.8rem;">
-                            <div style="color: #ffe066; font-weight: bold; margin-bottom: 0.3rem;">🧑 Question:</div>
-                            <div style="color: #fff; word-wrap: break-word; margin-left: 1rem;">{entry["question"]}</div>
-                            <div style="color: #b0b0b0; font-size: 0.8rem; margin-top: 0.3rem; margin-left: 1rem;">{user_time}</div>
-                        </div>
-                        <div style="border-top: 1px solid #434654; margin: 0.8rem 0;"></div>
-                        <div>
-                            <div style="color: #4f8bf9; font-weight: bold; margin-bottom: 0.3rem;">🤖 Answer:</div>
-                            <div style="color: #fff; word-wrap: break-word; margin-left: 1rem;">{entry["answer"]}</div>
-                            <div style="color: #b0b0b0; font-size: 0.8rem; margin-top: 0.3rem; margin-left: 1rem;">{bot_time}</div>
-                        </div>
-                    </div>
-                    ''', unsafe_allow_html=True)
+                # Compact expander format
+                with st.expander(f"#{len(st.session_state['chat_history']) - idx + 1} · {question}", expanded=False):
+                    st.markdown(f'**❓ Question** ({user_time.split()[1]})')
+                    st.markdown(f"> {entry['question']}")
+                    
+                    st.markdown(f'**✅ Answer** ({bot_time.split()[1]})')
+                    st.markdown(f"> {entry['answer']}")
         else:
-            st.info('No chat history yet.')
+            st.info('💬 No conversations yet. Ask a question to get started!')
         
         st.markdown('</div>', unsafe_allow_html=True)
 
