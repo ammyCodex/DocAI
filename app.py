@@ -253,6 +253,10 @@ def main():
         st.session_state['chat_history'] = get_last_n_conversations(n=10)
     if 'document_loaded' not in st.session_state:
         st.session_state['document_loaded'] = False
+    if 'current_response' not in st.session_state:
+        st.session_state['current_response'] = None
+    if 'current_question' not in st.session_state:
+        st.session_state['current_question'] = None
     
     # Cleanup old sessions (older than 10 days)
     cleanup_old_sessions(days=10)
@@ -325,15 +329,8 @@ def main():
         # Input box always visible (before and after upload)
         question = st.text_input(
             'Ask a question about your document:',
-            placeholder='Upload a document first to get started...' if not st.session_state['document_loaded'] else 'Type your question here...',
-            key=f"question_input_{st.session_state['question_key']}"
+            placeholder='Upload a document first to get started...' if not st.session_state['document_loaded'] else 'Type your question here...'
         )
-        
-        # Store current response in session state
-        if 'current_response' not in st.session_state:
-            st.session_state['current_response'] = None
-        if 'current_question' not in st.session_state:
-            st.session_state['current_question'] = None
         
         if not st.session_state['document_loaded']:
             st.info("👈 Upload and process a document in the sidebar to get started")
@@ -386,12 +383,6 @@ def main():
                     except Exception as e:
                         st.error(f"❌ Error generating response: {e}")
                         st.session_state['current_response'] = None
-                
-                # Pause before clearing input
-                time.sleep(2)
-                
-                # Clear input box by incrementing key
-                st.session_state['question_key'] += 1
         
         # Display current response (stays until new output is generated)
         if st.session_state['current_response']:
