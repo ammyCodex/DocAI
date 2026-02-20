@@ -5,48 +5,79 @@ import streamlit.components.v1 as components
 import cohere
 import json
 import os
+import uuid
+import hashlib
 from utils import get_document_text, get_chunked_text, get_faiss_index, search_faiss_index
 
 
-# Persistent storage for chat history
+# Persistent storage for chat history with session isolation
 DATA_DIR = ".streamlit/data"
-CHAT_HISTORY_FILE = os.path.join(DATA_DIR, "chat_history.json")
+SESSIONS_DIR = os.path.join(DATA_DIR, "sessions")
+CHAT_HISTORY_FILE_TEMPLATE = os.path.join(SESSIONS_DIR, "{session_id}", "chat_history.json")
+
+def ensure_session():
+    """Create or retrieve session ID for user."""
+    if 'session_id' not in st.session_state:
+        # Generate new session ID based on browser/user
+        session_id = str(uuid.uuid4())
+        st.session_state['session_id'] = session_id
+        os.makedirs(os.path.join(SESSIONS_DIR, session_id), exist_ok=True)
+    return st.session_state['session_id']
 
 def ensure_data_dir():
     """Create data directory if it doesn't exist."""
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(SESSIONS_DIR, exist_ok=True)
+
+def get_chat_history_file():
+    """Get the chat history file path for current session."""
+    session_id = ensure_session()
+    return CHAT_HISTORY_FILE_TEMPLATE.format(session_id=session_id)
 
 def save_chat_history(chat_history):
-    """Save chat history to persistent storage."""
+    """Save chat history to persistent storage (session-isolated, limited to 10 conversations)."""
     ensure_data_dir()
-    with open(CHAT_HISTORY_FILE, 'w') as f:
-        json.dump(chat_history, f, indent=2)
+    filepath = get_chat_history_file()
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    # Keep only the last 10 conversations
+    limited_history = chat_history[-10:] if len(chat_history) > 10 else chat_history
+    with open(filepath, 'w') as f:
+        json.dump(limited_history, f, indent=2)
 
 def load_chat_history():
-    """Load chat history from persistent storage."""
+    """Load chat history from persistent storage (session-isolated)."""
     ensure_data_dir()
-    if os.path.exists(CHAT_HISTORY_FILE):
+    filepath = get_chat_history_file()
+    if os.path.exists(filepath):
         try:
-            with open(CHAT_HISTORY_FILE, 'r') as f:
+            with open(filepath, 'r') as f:
                 return json.load(f)
         except:
             return []
     return []
 
-def get_chat_history_by_date(days=10):
-    """Get chat history from the past N days."""
+def get_last_n_conversations(n=10):
+    """Get the last N conversations from chat history."""
     all_history = load_chat_history()
+    # Return only the last N items
+    return all_history[-n:] if len(all_history) > n else all_history
+
+def cleanup_old_sessions(days=10):
+    """Clean up sessions older than N days (keeps data uploaded for 10 days)."""
+    ensure_data_dir()
     cutoff_date = datetime.now() - timedelta(days=days)
     
-    filtered = []
-    for entry in all_history:
-        try:
-            entry_date = datetime.fromisoformat(entry['user_time'].split()[0])
-            if entry_date >= cutoff_date:
-                filtered.append(entry)
-        except:
-            pass
-    return filtered
+    try:
+        for session_folder in os.listdir(SESSIONS_DIR):
+            session_path = os.path.join(SESSIONS_DIR, session_folder)
+            if os.path.isdir(session_path):
+                # Check folder modification time
+                folder_mtime = datetime.fromtimestamp(os.path.getmtime(session_path))
+                if folder_mtime < cutoff_date:
+                    # Remove old session folder
+                    import shutil
+                    shutil.rmtree(session_path)
+    except:
+        pass
 
 
 def get_cohere_response(question, context, cohere_api_key, model="command-a-03-2025"):
@@ -207,16 +238,22 @@ def main():
         </style>
     ''', unsafe_allow_html=True)
 
+    # Initialize session (must be first for isolation)
+    session_id = ensure_session()
+    
     # Initialize session state
     if 'faiss_index' not in st.session_state:
         st.session_state['faiss_index'] = None
     if 'chunks' not in st.session_state:
         st.session_state['chunks'] = None
     if 'chat_history' not in st.session_state:
-        # Load historical chat history from past 10 days
-        st.session_state['chat_history'] = get_chat_history_by_date(days=10)
+        # Load last 10 conversations only
+        st.session_state['chat_history'] = get_last_n_conversations(n=10)
     if 'document_loaded' not in st.session_state:
         st.session_state['document_loaded'] = False
+    
+    # Cleanup old sessions (older than 10 days)
+    cleanup_old_sessions(days=10)
 
     if st.button("🧹 Clear Chat History"):
         st.session_state['faiss_index'] = None
@@ -286,11 +323,13 @@ def main():
             if 'question_key' not in st.session_state:
                 st.session_state['question_key'] = 0
             
+            # Input box always shown first
             question = st.text_input(
                 'Ask a question about your document:',
                 key=f"question_input_{st.session_state['question_key']}"
             )
             
+            # Show processing and results below input box
             if question:
                 with st.spinner("Thinking..."):
                     try:
@@ -322,24 +361,25 @@ def main():
                             })
                             # Save to persistent storage
                             save_chat_history(st.session_state['chat_history'])
-                            
-                            # Display with typewriter effect
-                            st.markdown("### Answer:")
-                            placeholder = st.empty()
-                            typed = ""
-                            for char in response:
-                                typed += char
-                                placeholder.markdown(typed)
-                                time.sleep(0.01)
-                            
-                            # Pause before clearing input
-                            time.sleep(2)
-                            
-                            # Clear input box by incrementing key
-                            st.session_state['question_key'] += 1
                     
                     except Exception as e:
                         st.error(f"❌ Error generating response: {e}")
+                
+                # Display response after spinner completes (input box still visible above)
+                if 'response' in locals():
+                    st.markdown("### Answer:")
+                    placeholder = st.empty()
+                    typed = ""
+                    for char in response:
+                        typed += char
+                        placeholder.markdown(typed)
+                        time.sleep(0.01)
+                    
+                    # Pause before clearing input
+                    time.sleep(2)
+                    
+                    # Clear input box by incrementing key
+                    st.session_state['question_key'] += 1
     
     with right:
         st.markdown('<div class="sticky-sidebar">', unsafe_allow_html=True)
